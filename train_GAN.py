@@ -18,7 +18,8 @@ from PIL import Image
 
 class Trainer:
     def __init__(self, netG, netD, loader, optimizerD, optimizerG, checkpoint, epochs, output='./outputs', interval=50,
-                 device='cuda', resume=False, server='http://192.168.1.121', port=9999, env='GAN'):
+                 n_critic_D=5, n_critic_G=5, device='cuda', resume=False,
+                 server='http://192.168.1.121', port=9999, env='GAN'):
         self.netG, self.netD = netG, netD
         self.loader = loader
         self.N_batch = len(loader)
@@ -50,6 +51,12 @@ class Trainer:
 
         self.image_list = []
 
+        self.n_critic_D = n_critic_D
+        self.n_critic_G = n_critic_G
+
+        self.count_D = self.n_critic_D
+        self.count_G = self.n_critic_G
+
     def train(self, epoch):
         self.netD.train()
         self.netG.train()
@@ -57,10 +64,9 @@ class Trainer:
         Loss_D, Loss_G, Loss_D_x, Loss_D_G_z1, Loss_D_G_z2 = 0., 0., 0., 0., 0.
         local_iter = 0
         pbar = tqdm(enumerate(self.loader))
-        for idx, image in pbar:
-            image = image.to(self.device)
+        for idx, real_x in pbar:
+            real_x = real_x.to(self.device)
             # some header
-            real_x = image
             n = real_x.size(0)
             real_y = torch.full((n, 1), 1, device=self.device, requires_grad=False)
             fake_y = torch.full((n, 1), 0, device=self.device, requires_grad=False)
@@ -80,7 +86,12 @@ class Trainer:
 
             errD = (errD_real + errD_fake) / 2.
             errD.backward()
-            self.optimizerD.step()
+            self.count_D -= 1
+            if self.count_D >= 0:
+                self.optimizerD.step()
+                self.count_G = -10000
+            elif self.count_D != -10000 - 1:
+                self.count_G = self.n_critic_G
 
             # generator
             self.netG.zero_grad()
@@ -89,7 +100,12 @@ class Trainer:
             D_G_z2 = output.mean().item()
 
             errG.backward()
-            self.optimizerG.step()
+            self.count_G -= 1
+            if self.count_G >= 0:
+                self.optimizerG.step()
+                self.count_D = -10000
+            elif self.count_G != -10000 - 1:
+                self.count_D = self.n_critic_D
 
             pbar.set_description('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
                   % (epoch, self.epochs, idx, N, errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
@@ -160,6 +176,8 @@ if __name__ == '__main__':
     parser.add_argument('--beta1', default=0.5, type=float, help='adam beta1')
     parser.add_argument('--beta2', default=0.999, type=float, help='adam beta1')
     parser.add_argument('--env', default='CGAN', type=str, help='env')
+    parser.add_argument('--n_critic_D', default=5, type=int, help='number of D critic')
+    parser.add_argument('--n_critic_G', default=5, type=int, help='number of G critic')
     args = parser.parse_args()
 
     from torch.utils.data import DataLoader
@@ -189,7 +207,8 @@ if __name__ == '__main__':
 
     trainer = Trainer(netG, netD, loader, optimizerD, optimizerG,
                       args.checkpoint, epochs=args.epochs, output=args.output,
-                      interval=args.interval, device=args.device, resume=args.resume, env=args.env)
+                      interval=args.interval, device=args.device, resume=args.resume, env=args.env,
+                      n_critic_D=args.n_critic_D, n_critic_G=args.n_critic_G)
     trainer.run()
 
 #CUDA_VISIBLE_DEVICES=0 python train_GAN.py --data /home/zsh_o/work/data/faces --checkpoint ./checkpoints/gan.t7 --nc 3 --nz 100 --lrD 5e-4 --lrG 5e-4 --batch_size 128 --epochs 200 --output ./outputs/gan --interval 50

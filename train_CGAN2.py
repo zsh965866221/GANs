@@ -17,7 +17,7 @@ from PIL import Image
 
 
 class Trainer:
-    def __init__(self, netG, netD, loader, optimizerD, optimizerG, checkpoint, epochs, output='./outputs', interval=50,
+    def __init__(self, netG, netD, loader, optimizerD, optimizerG, checkpoint, epochs, output='./outputs', interval=50, n_critic_D=5, n_critic_G=5,
                  device='cuda', resume=False, server='http://192.168.1.121', port=9999, env='GAN'):
         self.netG, self.netD = netG, netD
         self.loader = loader
@@ -53,8 +53,8 @@ class Trainer:
         self.iters = 0
 
         self.image_list = []
-        self.n_critic_D = 5
-        self.n_critic_G = 5
+        self.n_critic_D = n_critic_D
+        self.n_critic_G = n_critic_G
 
         self.count_D = self.n_critic_D
         self.count_G = self.n_critic_G
@@ -186,6 +186,8 @@ if __name__ == '__main__':
     parser.add_argument('--beta2', default=0.999, type=float, help='adam beta1')
     parser.add_argument('--ncd', default=22, type=int, help='condition dim')
     parser.add_argument('--env', default='CGAN', type=str, help='env')
+    parser.add_argument('--n_critic_D', default=5, type=int, help='number of D critic')
+    parser.add_argument('--n_critic_G', default=5, type=int, help='number of G critic')
     args = parser.parse_args()
 
     from torch.utils.data import DataLoader
@@ -215,7 +217,8 @@ if __name__ == '__main__':
 
     trainer = Trainer(netG, netD, loader, optimizerD, optimizerG,
                       args.checkpoint, epochs=args.epochs, output=args.output,
-                      interval=args.interval, device=args.device, resume=args.resume, env=args.env)
+                      interval=args.interval, device=args.device, resume=args.resume, env=args.env,
+                      n_critic_D=args.n_critic_D, n_critic_G=args.n_critic_G)
     trainer.run()
 
 #CUDA_VISIBLE_DEVICES=0 python train_CGAN.py --data /home/zsh_o/work/data/extra_data --checkpoint ./checkpoints/cgan.t7 --nc 3 --nz 100 --ncd 22 --lrD 5e-4 --lrG 5e-4 --batch_size 128 --epochs 200 --output ./outputs/cgan --interval 50 --env CGAN

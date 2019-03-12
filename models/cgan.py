@@ -69,21 +69,30 @@ class Discriminator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
         )
         self.cnn2 = nn.Sequential(
-            #
             nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
-        self.match = nn.Sequential(
-            nn.Linear(ndf * 8 * 4 * 4 + ncd, 1, bias=False),
+        self.embed = nn.Sequential(
+            nn.Linear(ncd, 256, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.f = nn.Sequential(
+            nn.Conv2d(ndf * 8 + 256, ndf * 8, 1, 1, 0, bias=False),
+            nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            #
+            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
 
     def forward(self, x, c):
         x_mid = self.cnn1(x)
         realistic = self.cnn2(x_mid).squeeze(-1).squeeze(-1)
-        x_flatten = x_mid.flatten(start_dim=1)
-        c_mid = torch.cat([x_flatten, c], dim=1)
-        matched = self.match(c_mid)
+        c_mid = self.embed(c).unsqueeze(-1).unsqueeze(-1)
+        c_fill = c_mid.repeat(1, 1, 4, 4)
+        x = torch.cat([x_mid, c_fill], dim=1)
+        matched = self.f(x).squeeze(-1).squeeze(-1)
         return realistic, matched
 
 
@@ -109,17 +118,27 @@ class Discriminator2(nn.Module):
             nn.BatchNorm2d(ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
         )
+        self.embed = nn.Sequential(
+            nn.Linear(ncd, 256, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
         self.f = nn.Sequential(
-            nn.Linear(ndf * 8 * 4 * 4 + ncd, 1, bias=False),
+            nn.Conv2d(ndf * 8 + 256, ndf * 8, 1, 1, 0, bias=False),
+            nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            #
+            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
 
     def forward(self, x, c):
         x_mid = self.cnn1(x)
-        x_flatten = x_mid.flatten(start_dim=1)
-        c_mid = torch.cat([x_flatten, c], dim=1)
-        realistic = self.f(c_mid)
-        return realistic
+        c_mid = self.embed(c).unsqueeze(-1).unsqueeze(-1)
+        c_fill = c_mid.repeat(1, 1, 4, 4)
+        x = torch.cat([x_mid, c_fill], dim=1)
+        realistic = self.f(x)
+        return realistic.squeeze(-1).squeeze(-1)
 
 
 def weights_init(m):
