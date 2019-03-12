@@ -64,7 +64,7 @@ class Trainer:
             n = real_x.size(0)
             real_y = torch.full((n, 1), 1, device=self.device, requires_grad=False)
             fake_y = torch.full((n, 1), 0, device=self.device, requires_grad=False)
-            noise = torch.randn(n, self.netG.nz, device=self.device)
+            noise = torch.randn(n, self.netG.nz, device=self.device, requires_grad=False)
             fake_x = self.netG(noise)
 
             # Discriminator

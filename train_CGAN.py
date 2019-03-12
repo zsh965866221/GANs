@@ -39,11 +39,12 @@ class Trainer:
         self.plotter = LinePlotter(self.viz)
 
         self.criterion = nn.BCELoss()
-        self.weight_c = 2.
+        self.weight_c_D = 5.
+        self.weight_c_G = 10.
 
         self.fixed_noise = torch.randn(16, self.netG.nz, device=self.device)
-        # 灰头发红眼睛
-        t = [0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0.]
+        # 红头发红眼睛
+        t = [0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0.]
         t = t * 16
         self.fixed_c = torch.Tensor(t).to(self.device).view(16, -1)
         self.dir_output = output
@@ -59,119 +60,112 @@ class Trainer:
         self.netD.train()
         self.netG.train()
         N = len(self.loader)
-        LossD_realx, LossD_fakex, LossD_matchedc, LossD_fakec,\
-            LossG_fakex, LossG_matchedc, LossG_fakec = 0., 0., 0., 0., 0., 0., 0.
+        LossD, LossG = 0., 0.
         local_iter = 0
         pbar = tqdm(enumerate(self.loader))
-        for idx, (image, tag, fake_tag) in pbar:
-            image = image.to(self.device)
-            c = tag.to(self.device)
-            fake_c = fake_tag.to(self.device)
+        for idx, (real_x, real_c, fake_c) in pbar:
+            # 整理该batch的头
+            real_x = real_x.to(self.device)
+            real_c = real_c.to(self.device)
+            fake_c = fake_c.to(self.device)
+            n = real_x.size(0)
+            real_y = torch.full((n, 1), 1, device=self.device, requires_grad=False)
+            fake_y = torch.full((n, 1), 0, device=self.device, requires_grad=False)
+            noise = torch.randn(n, self.netG.nz, device=self.device, requires_grad=False)
+            fake_x_realc_G = self.netG(noise, real_c)
+            fake_x_realc_D = fake_x_realc_G.detach()
+            fake_x_fakec_G = self.netG(noise, fake_c)
+            fake_x_fakec_D = fake_x_fakec_G.detach()
+
             # Discriminator
             self.netD.zero_grad()
-            # Real x, Matched c
-            real = image
-            n = real.size(0)
-            realistic = torch.full((n, 1), 1, device=self.device)
-            matched = torch.full((n, 1), 1, device=self.device)
-            output_realistic, output_matched = self.netD(real, c)
-            # Ex-p(x)[log D(x)]
-            errD_realx_matchedc_realistic = self.criterion(output_realistic, realistic)
-            errD_realx_matchedc_matched = self.criterion(output_matched, matched)
-            errD_realx_matchedc = errD_realx_matchedc_realistic + errD_realx_matchedc_matched * self.weight_c
-            errD_realx_matchedc.backward()
+            # Real x, real c
+            output_realistic, output_matched = self.netD(real_x, real_c)
+            errD_realx_realc_realistic = self.criterion(output_realistic, real_y)
+            errD_realx_realc_matched = self.criterion(output_matched, real_y)
+            errD_realx_realc = errD_realx_realc_realistic + errD_realx_realc_matched * self.weight_c_D
 
             # Real x, fake c
-            realistic.fill_(1)
-            matched.fill_(0)
-            output_realistic, output_matched = self.netD(real, fake_c)
-            # Ex-p(x)[log D(x)]
-            errD_realx_fakec_realistic = self.criterion(output_realistic, realistic)
-            errD_realx_fakec_matched = self.criterion(output_matched, matched)
-            errD_realx_fakec = errD_realx_fakec_realistic + errD_realx_fakec_matched * self.weight_c
-            errD_realx_fakec.backward()
+            output_realistic, output_matched = self.netD(real_x, fake_c)
+            errD_realx_fakec_realistic = self.criterion(output_realistic, real_y)
+            errD_realx_fakec_matched = self.criterion(output_matched, fake_y)
+            errD_realx_fakec = errD_realx_fakec_realistic + errD_realx_fakec_matched * self.weight_c_D
 
-            # fake x, matched c
-            noise = torch.randn(n, self.netG.nz, device=self.device)
-            fake1 = self.netG(noise, c)
-            realistic.fill_(0)
-            matched.fill_(1)
-            output_realistic, output_matched = self.netD(fake1.detach(), c)
-            errD_fakex_matchedc_realistic = self.criterion(output_realistic, realistic)
-            errD_fakex_matchedc_matched = self.criterion(output_matched, matched)
-            errD_fakex_matchedc = errD_fakex_matchedc_realistic + errD_fakex_matchedc_matched * self.weight_c
-            errD_fakex_matchedc.backward()
+            # fake x, real c G, real c D
+            output_realistic, output_matched = self.netD(fake_x_realc_D, real_c)
+            errD_fakex_realc_realc_realistic = self.criterion(output_realistic, fake_y)
+            errD_fakex_realc_realc_matched = self.criterion(output_matched, real_y)
+            errD_fakex_realc_realc = errD_fakex_realc_realc_realistic + errD_fakex_realc_realc_matched * self.weight_c_D
 
-            # fake x, fake c
-            fake2 = self.netG(noise, fake_c)
-            realistic.fill_(0)
-            matched.fill_(0)
-            output_realistic, output_matched = self.netD(fake2.detach(), fake_c)
-            errD_fakex_fakec_realistic = self.criterion(output_realistic, realistic)
-            errD_fakex_fakec_matched = self.criterion(output_matched, matched)
-            errD_fakex_fakec = errD_fakex_fakec_realistic + errD_fakex_fakec_matched * self.weight_c
-            errD_fakex_fakec.backward()
+            # fake x, real c G, fake c D
+            output_realistic, output_matched = self.netD(fake_x_realc_D, fake_c)
+            errD_fakex_realc_fakec_realistic = self.criterion(output_realistic, fake_y)
+            errD_fakex_realc_fakec_matched = self.criterion(output_matched, fake_y)
+            errD_fakex_realc_fakec = errD_fakex_realc_fakec_realistic + errD_fakex_realc_fakec_matched * self.weight_c_D
 
+            # fake x, fake c G, real c D
+            output_realistic, output_matched = self.netD(fake_x_fakec_D, real_c)
+            errD_fakex_fakec_realc_realistic = self.criterion(output_realistic, fake_y)
+            errD_fakex_fakec_realc_matched = self.criterion(output_matched, fake_y)
+            errD_fakex_fakec_realc = errD_fakex_fakec_realc_realistic + errD_fakex_fakec_realc_matched * self.weight_c_D
+
+            # fake x, fake c G, fake c D
+            output_realistic, output_matched = self.netD(fake_x_fakec_D, fake_c)
+            errD_fakex_fakec_fakec_realistic = self.criterion(output_realistic, fake_y)
+            errD_fakex_fakec_fakec_matched = self.criterion(output_matched, real_y)
+            errD_fakex_fakec_fakec = errD_fakex_fakec_fakec_realistic + errD_fakex_fakec_fakec_matched * self.weight_c_D
+
+            errD = errD_realx_realc + errD_realx_fakec + errD_fakex_realc_realc + errD_fakex_realc_fakec +\
+                   errD_fakex_fakec_realc + errD_fakex_fakec_fakec
+            errD.backward()
             self.optimizerD.step()
 
             # Generator
             self.netG.zero_grad()
-            # fake x, matched c
-            realistic.fill_(1)
-            matched.fill_(1)
-            output_realistic, output_matched = self.netD(fake1, c)
-            errG_fakex_matchedc_realistic = self.criterion(output_realistic, realistic)
-            errG_fakex_matchedc_matched = self.criterion(output_matched, matched)
-            errG_fakex_matchedc = errG_fakex_matchedc_realistic + errG_fakex_matchedc_matched * self.weight_c
-            errG_fakex_matchedc.backward()
+            # fake x, real c G, real c D
+            output_realistic, output_matched = self.netD(fake_x_realc_G, real_c)
+            errG_realc_realc_realistic = self.criterion(output_realistic, real_y)
+            errG_realc_realc_matched = self.criterion(output_matched, real_y)
+            errG_realc_realc = errG_realc_realc_realistic + errG_realc_realc_matched * self.weight_c_G
 
-            # fake x, fake c
-            realistic.fill_(1)
-            matched.fill_(0)
-            output_realistic, output_matched = self.netD(fake2, fake_c)
-            errG_fakex_fakec_realistic = self.criterion(output_realistic, realistic)
-            errG_fakex_fakec_matched = self.criterion(output_matched, matched)
-            errG_fakex_fakec = errG_fakex_fakec_realistic + errG_fakex_fakec_matched * self.weight_c
-            errG_fakex_fakec.backward()
+            # fake x, real c G, fake c D
+            output_realistic, output_matched = self.netD(fake_x_realc_G, fake_c)
+            errG_realc_fakec_realistic = self.criterion(output_realistic, real_y)
+            errG_realc_fakec_matched = self.criterion(output_matched, fake_y)
+            errG_realc_fakec = errG_realc_fakec_realistic + errG_realc_fakec_matched * self.weight_c_G
 
+            # fake x, fake c G, real c D
+            output_realistic, output_matched = self.netD(fake_x_fakec_G, real_c)
+            errG_fakec_realc_realistic = self.criterion(output_realistic, real_y)
+            errG_fakec_realc_matched = self.criterion(output_matched, fake_y)
+            errG_fakec_realc = errG_fakec_realc_realistic + errG_fakec_realc_matched * self.weight_c_G
+
+            # fake x, fake c G, fake c D
+            output_realistic, output_matched = self.netD(fake_x_fakec_G, fake_c)
+            errG_fakec_fakec_realistic = self.criterion(output_realistic, real_y)
+            errG_fakec_fakec_matched = self.criterion(output_matched, real_y)
+            errG_fakec_fakec = errG_fakec_fakec_realistic + errG_fakec_fakec_matched * self.weight_c_G
+
+            errG = errG_realc_realc + errG_realc_fakec + errG_fakec_realc + errG_fakec_fakec
+            errG.backward()
             self.optimizerG.step()
 
             # err
-            errD_realx = errD_realx_matchedc_realistic.item() + errD_realx_fakec_realistic.item()
-            errD_fakex = errD_fakex_matchedc_realistic.item() + errD_fakex_fakec_realistic.item()
-            errD_matchedc = errD_realx_matchedc_matched.item() + errD_fakex_matchedc_matched.item()
-            errD_fakec = errD_realx_fakec_matched.item() + errD_fakex_fakec_matched.item()
+            errD = errD.item()
+            errG = errG.item()
 
-            errG_fakex = errG_fakex_matchedc_realistic.item() + errG_fakex_fakec_realistic.item()
-            errG_matchedc = errG_fakex_matchedc_matched.item()
-            errG_fakec = errG_fakex_fakec_matched.item()
+            pbar.set_description('[%d/%d][%d/%d]\terrD: %.4f'
+                                 '\terrG: %.4f'
+                  % (epoch, self.epochs, idx, N, errD, errG))
 
-            pbar.set_description('[%d/%d][%d/%d]\terrD_realx: %.4f\terrD_fakex: %.4f'
-                                 '\terrD_matchedc: %.4f\terrD_fakec: %.4f'
-                                 '\terrG_fakex: %.4f\terrG_matchedc: %.4f\terrG_fakec: %.4f'
-                  % (epoch, self.epochs, idx, N, errD_realx, errD_fakex, errD_matchedc, errD_fakec,
-                     errG_fakex, errG_matchedc, errG_fakec))
-
-            LossD_realx += errD_realx
-            LossD_fakex += errD_fakex
-            LossD_matchedc += errD_matchedc
-            LossD_fakec += errD_fakec
-            LossG_fakex += errG_fakex
-            LossG_matchedc += errG_matchedc
-            LossG_fakec += errG_fakec
+            LossD += errD
+            LossG += errG
             local_iter += 1
             self.iters += 1
             if self.iters % self.interval == 0:
-                self.plotter.plot('Loss D', 'realx', 'Loss D', self.iters, LossD_realx / local_iter)
-                self.plotter.plot('Loss D', 'fakex', 'Loss D', self.iters, LossD_fakex / local_iter)
-                self.plotter.plot('Loss D', 'matchedc', 'Loss D', self.iters, LossD_matchedc / local_iter)
-                self.plotter.plot('Loss D', 'fakec', 'Loss D', self.iters, LossD_fakec / local_iter)
-
-                self.plotter.plot('Loss G', 'fakex', 'Loss G', self.iters, LossG_fakex / local_iter)
-                self.plotter.plot('Loss G', 'matchedc', 'Loss G', self.iters, LossG_matchedc / local_iter)
-                self.plotter.plot('Loss G', 'fakec', 'Loss G', self.iters, LossG_fakec / local_iter)
-                LossD_realx, LossD_fakex, LossD_matchedc, LossD_fakec, \
-                    LossG_fakex, LossG_matchedc, LossG_fakec = 0., 0., 0., 0., 0., 0., 0.
+                self.plotter.plot('Loss', 'D', 'Loss', self.iters, LossD / local_iter)
+                self.plotter.plot('Loss', 'G', 'Loss', self.iters, LossG / local_iter)
+                LossD, LossG = 0., 0.
                 local_iter = 0
 
         # 每一个epoch都保存
