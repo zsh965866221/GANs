@@ -21,7 +21,10 @@ CUDA_VISIBLE_DEVICES=0 python train_InfoGAN.py --data /home/zsh_o/work/data/extr
 Token: zhangheng
 
 ## InfoGAN
-![infogan1](https://github.com/zsh965866221/GANs/tree/master/outputs/infogan/1.png)
-![infogan2](https://github.com/zsh965866221/GANs/tree/master/outputs/infogan/2.png)
-![infogan3](https://github.com/zsh965866221/GANs/tree/master/outputs/infogan/3.png)
-![infogan4](https://github.com/zsh965866221/GANs/tree/master/outputs/infogan/4.png)
+![infogan1](https://github.com/zsh965866221/GANs/raw/master/outputs/infogan/1.png)
+![infogan2](https://github.com/zsh965866221/GANs/raw/master/outputs/infogan/2.png)
+![infogan3](https://github.com/zsh965866221/GANs/raw/master/outputs/infogan/3.png)
+![infogan4](https://github.com/zsh965866221/GANs/raw/master/outputs/infogan/4.png)
+
+
+**未完待续。。。**
