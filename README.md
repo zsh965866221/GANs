@@ -16,3 +16,8 @@ CUDA_VISIBLE_DEVICES=0 python train_InfoGAN.py --data /home/zsh_o/work/data/extr
 动画人脸数据集  
 链接：https://pan.baidu.com/s/1-SRk_7D7qCH3S3lGrctnzQ   
 提取码：auyt   
+
+北化校园网可以进这个链接进行测试：http://222.199.225.62:8888/notebooks/learn/GAN/check%20InfoGAN.ipynb  
+Token: zhangheng
+
+## InfoGAN
